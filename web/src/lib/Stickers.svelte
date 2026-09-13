@@ -4,6 +4,7 @@
   let borderMm = $state(0.9)
   let addBorder = $state(true)
   let dieCut = $state('auto')
+  let split = $state('auto')
   let busy = $state(false)
   let error = $state('')
   let result = $state(null)
@@ -38,6 +39,7 @@
     fd.append('border_mm', String(borderMm))
     fd.append('add_border', String(addBorder))
     fd.append('die_cut', dieCut)
+    fd.append('split', split)
     try {
       const r = await fetch('/api/stickers/pack', { method: 'POST', body: fd })
       const j = await r.json()
@@ -78,6 +80,8 @@
           <div class="empty">
             <strong>Drop sticker images here</strong>
             <span class="muted">Any number, any shape. Transparent art is die-cut.</span>
+            <span class="muted">One sheet with several stickers on it works too,
+              it gets split automatically.</span>
           </div>
         {/if}
       </div>
@@ -97,6 +101,18 @@
         <button class="wide" onclick={clearAll}>Clear all</button>
       {/if}
     </section>
+
+    {#if files.length === 1}
+      <section>
+        <h2>Sheet</h2>
+        <select bind:value={split} onchange={() => (result = null)}>
+          <option value="auto">Split it into separate stickers</option>
+          <option value="no">It is one single sticker</option>
+        </select>
+        <p class="hint">One transparent image holding several stickers is cut
+          apart on the gaps between them, then each piece is packed on its own.</p>
+      </section>
+    {/if}
 
     <section>
       <h2>Spacing</h2>

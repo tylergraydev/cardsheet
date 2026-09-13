@@ -53,6 +53,11 @@ def main():
                     help="rim to add to art that has none (default 0.9mm)")
     ap.add_argument("--no-border", action="store_true",
                     help="never add a rim, even to art without one")
+    ap.add_argument("--split", dest="split", action="store_true", default=None,
+                    help="split a single sheet into its stickers "
+                         "(default when you pass exactly one image)")
+    ap.add_argument("--no-split", dest="split", action="store_false",
+                    help="treat a lone image as one big sticker")
     ap.add_argument("-o", "--out", default="sticker_template.svg")
     a = ap.parse_args()
 
@@ -67,7 +72,8 @@ def main():
                        die_cut=a.die_cut,
                        paper=a.paper,
                        corner_cut_mm=STK.to_mm(a.corner_cut),
-                       radius_mm=STK.to_mm(a.radius))
+                       radius_mm=STK.to_mm(a.radius),
+                       split=a.split)
     except ValueError as e:
         sys.exit(str(e))
 
@@ -81,12 +87,14 @@ def main():
     sheet.save(sheet_path, dpi=(300, 300))
     STK.preview_image(r["ordered"], r["region"], outlines=r["outlines"]).save(prev_path)
 
-    mapping = [dict(s, image=str(paths[s["index"]])) for s in r["slots"]]
+    label = ((lambda i: f"{paths[0].name} #{i + 1}") if r["split"]
+             else (lambda i: str(paths[i])))
+    mapping = [dict(s, image=label(s["index"])) for s in r["slots"]]
     out.with_suffix(".json").write_text(json.dumps(mapping, indent=2), encoding="utf-8")
 
     side = r["area_mm2"] ** 0.5
     print(f"wrote {out}")
-    print(f"  {len(paths)} stickers, {'die-cut' if r['die_cut'] else 'rectangular'}, "
+    print(f"  {r['count']} stickers, {'die-cut' if r['die_cut'] else 'rectangular'}, "
           f"{r['area_mm2']:.0f} mm2 each "
           f"(a square one would be {side:.1f} x {side:.1f} mm)")
     print(f"  group {r['group_mm'][0]} x {r['group_mm'][1]} mm "

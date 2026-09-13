@@ -229,7 +229,8 @@ async def stickers_pack(files: list[UploadFile] = File(default=[]),
                         add_border: bool = Form(True),
                         die_cut: str = Form("auto"),
                         radius_mm: float = Form(0.0),
-                        paper: str = Form("letter")):
+                        paper: str = Form("letter"),
+                        split: str = Form("auto")):
     if not files:
         raise HTTPException(400, "Drop some sticker images first.")
     if paper not in STK.USABLE:
@@ -246,13 +247,17 @@ async def stickers_pack(files: list[UploadFile] = File(default=[]),
             raise HTTPException(400, f"{f.filename} is not a readable image.")
         names.append(f.filename)
 
-    die = {"auto": None, "yes": True, "no": False}.get(die_cut, None)
+    tri = {"auto": None, "yes": True, "no": False}
     try:
         r = STK.layout(arts, gap_mm=gap_mm, border_mm=border_mm,
-                       add_border=add_border, die_cut=die, paper=paper,
-                       radius_mm=radius_mm)
+                       add_border=add_border, die_cut=tri.get(die_cut),
+                       paper=paper, radius_mm=radius_mm,
+                       split=tri.get(split))
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+    if r["split"]:
+        names = [f"{names[0]} #{i + 1}" for i in range(r["count"])]
 
     sid = uuid.uuid4().hex[:12]
     d = STICKERS / sid
@@ -267,7 +272,8 @@ async def stickers_pack(files: list[UploadFile] = File(default=[]),
     (d / "layout.json").write_text(json.dumps(slots, indent=2), encoding="utf-8")
     return JSONResponse({
         "id": sid,
-        "count": len(arts),
+        "count": r["count"],
+        "split": r["split"],
         "die_cut": r["die_cut"],
         "area_mm2": round(r["area_mm2"]),
         "typical_mm": round(r["area_mm2"] ** 0.5, 1),

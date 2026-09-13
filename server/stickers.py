@@ -30,6 +30,62 @@ def to_mm(value, default="mm"):
     return float(s) * (MM_PER_IN if default == "in" else 1.0)
 
 
+def split_sheet(img, min_area_frac=0.0015, close_px=2, pad_px=3):
+    """Split one transparent sheet into its separate stickers.
+
+    Each disconnected run of opaque pixels is one sticker. Soft drop shadows
+    fall below the alpha threshold so they do not join neighbours together, and
+    a small binary closing bridges the hairline gaps that antialiasing leaves
+    inside a single piece of art.
+
+    Returns [(image, (x, y))] in reading order, positions being where each came
+    from so the caller can report sensibly.
+    """
+    from scipy import ndimage
+
+    im = img.convert("RGBA")
+    a = np.asarray(im)
+    solid = a[:, :, 3] >= 128
+    if not solid.any():
+        return []
+    m = ndimage.binary_closing(solid, iterations=close_px) if close_px else solid
+    lab, n = ndimage.label(m)
+    if n == 0:
+        return []
+
+    counts = ndimage.sum(m, lab, range(1, n + 1))
+    floor = max(min_area_frac * solid.size, 64)
+    keep = [i + 1 for i, c in enumerate(counts) if c >= floor]
+    boxes = ndimage.find_objects(lab)
+
+    out = []
+    for k in keep:
+        ys, xs = boxes[k - 1]
+        y0 = max(0, ys.start - pad_px); y1 = min(a.shape[0], ys.stop + pad_px)
+        x0 = max(0, xs.start - pad_px); x1 = min(a.shape[1], xs.stop + pad_px)
+        crop = a[y0:y1, x0:x1].copy()
+        # Blank any neighbour that reaches into this crop, but leave label 0
+        # alone so soft shadows and antialiased fringes survive.
+        other = (lab[y0:y1, x0:x1] != k) & (lab[y0:y1, x0:x1] != 0)
+        crop[other] = 0
+        out.append((Image.fromarray(crop), (x0, y0)))
+
+    # reading order: band into rows by the row height, then left to right
+    if out:
+        hs = sorted(im.size[1] for _ in out)
+        tol = max(8, int(0.4 * min(c.height for c, _ in out)))
+        out.sort(key=lambda t: t[1][1])
+        rows, cur = [], [out[0]]
+        for t in out[1:]:
+            if t[1][1] - cur[0][1][1] <= tol:
+                cur.append(t)
+            else:
+                rows.append(cur); cur = [t]
+        rows.append(cur)
+        out = [t for row in rows for t in sorted(row, key=lambda q: q[1][0])]
+    return out
+
+
 def reading_order(placements, row_tol_mm=6.35):
     """The same banding sheet.find_slots uses: rows, then left to right."""
     ps = sorted(placements, key=lambda p: p[1])
@@ -128,12 +184,29 @@ def sheet_image(ordered, arts, dpi=300):
 
 
 def layout(arts, *, gap_mm=2.0, border_mm=0.9, add_border=True, die_cut=None,
-           paper="letter", corner_cut_mm=CORNER_CUT_MM, radius_mm=0.0):
-    """Pack RGBA images. Returns a dict of everything the callers need."""
+           paper="letter", corner_cut_mm=CORNER_CUT_MM, radius_mm=0.0,
+           split=None):
+    """Pack RGBA images. Returns a dict of everything the callers need.
+
+    split=None splits a lone image into its separate stickers when it clearly
+    holds more than one, which is the usual case for a sheet exported as a
+    single transparent PNG. Pass False to treat it as one big sticker.
+    """
     arts = [im.convert("RGBA") for im in arts]
+    notes = []
+    split_from_sheet = False
+
+    if (split is None or split) and len(arts) == 1:
+        parts = split_sheet(arts[0])
+        if len(parts) >= 2:
+            arts = [p for p, _ in parts]
+            split_from_sheet = True
+            notes.append(f"split the sheet into {len(arts)} stickers")
+        elif split:
+            notes.append("only found one shape on that sheet, nothing to split")
+
     aspects = [im.width / im.height for im in arts]
     alphas = [np.asarray(im)[:, :, 3] for im in arts]
-    notes = []
 
     transparent = all((al < 128).mean() > 0.02 for al in alphas)
     die = transparent if die_cut is None else bool(die_cut)
@@ -194,6 +267,7 @@ def layout(arts, *, gap_mm=2.0, border_mm=0.9, add_border=True, die_cut=None,
     return {
         "ordered": ordered, "arts": arts, "region": region, "outlines": outs,
         "svg": svg, "area_mm2": area, "die_cut": die, "notes": notes,
+        "count": len(arts), "split": split_from_sheet,
         "group_mm": [round(gw, 1), round(gh, 1)],
         "dpi": [round(min(dpis)), round(max(dpis))],
         "rotated": sum(1 for p in ordered if p[5]),
