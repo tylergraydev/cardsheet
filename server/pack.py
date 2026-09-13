@@ -418,9 +418,12 @@ def smooth_mask(mask, r):
     if r <= 0:
         return mask
     from scipy import ndimage as _nd
-    m = _smooth(mask, r)
-    f = _nd.gaussian_filter(m.astype(np.float32), sigma=r * 0.5)
-    return f >= 0.5
+    m = _smooth(mask, r)                       # closing always contains mask
+    f = _nd.gaussian_filter(m.astype(np.float32), sigma=r * 0.5) >= 0.5
+    # Union, so smoothing can only ADD area. The blur on its own eats into
+    # convex detail, and anything it ate would end up outside the rim: a leaf
+    # tip poking through the white with no border around it.
+    return f | m
 
 
 def add_border(rgba, px, colour=(255, 255, 255), smooth=None):

@@ -136,18 +136,22 @@
       </label>
       {#if addBorder}
         <div class="row">
-          <input type="range" min="0.3" max="3" step="0.1" bind:value={borderMm}
+          <input type="range" min="0.3" max="6" step="0.1" bind:value={borderMm}
                  oninput={() => (result = null)} />
           <span class="mono val">{borderMm} mm</span>
         </div>
+        <p class="hint">Rim width. This is also what rounds the outline off:
+          the rim curves around corners at its own radius, so a wider rim gives
+          a rounder sticker. 3 mm and up reads as properly die-cut.</p>
         <div class="row">
           <input type="range" min="0" max="8" step="0.5" bind:value={smooth}
                  oninput={() => (result = null)} />
           <span class="mono val">{smooth === 0 ? 'sharp' : smooth + ' mm'}</span>
         </div>
-        <p class="hint">How much to round the outline off before the rim goes
-          on. It absorbs detail and detached bits within about twice this, so
-          bigger means a smoother, blobbier sticker. 3 mm suits busy art.</p>
+        <p class="hint">Smoothing only fills in: it closes the gaps between
+          parts of the design and swallows detached bits within about twice
+          this. It cannot round a leaf tip off, since that would mean cutting
+          into the artwork. Widen the rim for that.</p>
       {/if}
       <p class="hint">Art that already has a white rim is detected and left
         alone, so this only affects bare artwork.</p>
