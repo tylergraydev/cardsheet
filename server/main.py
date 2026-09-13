@@ -59,7 +59,11 @@ def template_payload():
         "dpi": S.DPI,
         "slots": [s.json() for s in slots],
         "min_gap_mm": round(S.min_gap_px(slots) / S.DPI * 25.4, 2) if len(slots) > 1 else None,
-        "max_bleed_mm": round(S.min_gap_px(slots) / 2 / S.DPI * 25.4, 2) if len(slots) > 1 else 6.0,
+        # Floor to whole pixels before converting. compose() turns bleed_mm
+        # back into px with round(), so advertising half of an odd gap
+        # (10.5 px -> 0.89 mm) comes back as 11 px and overlaps.
+        "max_bleed_mm": (int(S.min_gap_px(slots) // 2 / S.DPI * 25.4 * 100) / 100
+                         if len(slots) > 1 else 6.0),
     }
 
 

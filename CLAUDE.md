@@ -82,9 +82,29 @@ All three items that used to be unverified now are.
    defaults Actions-published packages to private in a public repo. The old
    note here said that flip was mandatory. It is not.
 
-Still not done: **the container has never been run.** The image builds and
-pulls, but nothing has started it and no sheet has been built from inside it.
-That is the next thing to prove, on Unraid.
+4. **The container runs.** Proven on Docker Desktop from the GHCR image,
+   port 8081, against the real `cut template.pdf`. Built-in HEALTHCHECK goes
+   healthy, slot detection finds 4 slots at 63.0 x 88.0 mm, and a full build
+   through `POST /api/compose` verifies **41,175 mark pixels, zero changed,
+   zero halo**, page exactly 612 x 792 pt. Identical to the native numbers, so
+   containerising changed nothing.
+
+Unraid is still pending. The pull works there and the container is created,
+but `docker run` fails with `mkdir /mnt/user/appdata/cardsheet: input/output
+error`. That is a server-side problem, not an app problem: the Cache pool that
+holds `appdata` reports 12.4 MB used, which is not plausible, so the btrfs
+filesystem on that SSD needs looking at before the mount will work.
+
+### The bleed cap was off by a pixel
+
+`max_bleed_mm` halved the gap in float pixels (21 / 2 = 10.5 px -> 0.89 mm),
+but `compose()` converts mm back with `round()`, giving 11 px. So the UI
+advertised a maximum that immediately tripped the overlap warning. Now floored
+to whole pixels, 0.84 mm, which composes clean.
+
+The real template also has tight gaps: 1.78 mm, capping bleed at 0.84 mm per
+side, under the +/-1 mm Print Then Cut drift. `templates/` has gap8 and gap10
+SVGs that fix this properly.
 
 ## Deploying it
 
