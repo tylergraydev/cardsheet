@@ -5,7 +5,7 @@
   let addBorder = $state(true)
   let dieCut = $state('auto')
   let split = $state('auto')
-  let smooth = $state(0.6)
+  let smooth = $state(3)
   let busy = $state(false)
   let error = $state('')
   let result = $state(null)
@@ -41,7 +41,7 @@
     fd.append('add_border', String(addBorder))
     fd.append('die_cut', dieCut)
     fd.append('split', split)
-    fd.append('smooth', String(smooth))
+    fd.append('smooth_mm', String(smooth))
     try {
       const r = await fetch('/api/stickers/pack', { method: 'POST', body: fd })
       const j = await r.json()
@@ -141,13 +141,13 @@
           <span class="mono val">{borderMm} mm</span>
         </div>
         <div class="row">
-          <input type="range" min="0" max="1.5" step="0.1" bind:value={smooth}
+          <input type="range" min="0" max="8" step="0.5" bind:value={smooth}
                  oninput={() => (result = null)} />
-          <span class="mono val">{smooth === 0 ? 'sharp' : smooth.toFixed(1) + '×'}</span>
+          <span class="mono val">{smooth === 0 ? 'sharp' : smooth + ' mm'}</span>
         </div>
-        <p class="hint">Smoothing rounds the rim off instead of tracing every
-          jag in the artwork. It fills notches narrower than about twice this,
-          measured in rim widths.</p>
+        <p class="hint">How much to round the outline off before the rim goes
+          on. It absorbs detail and detached bits within about twice this, so
+          bigger means a smoother, blobbier sticker. 3 mm suits busy art.</p>
       {/if}
       <p class="hint">Art that already has a white rim is detected and left
         alone, so this only affects bare artwork.</p>

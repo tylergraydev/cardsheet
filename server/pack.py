@@ -313,15 +313,40 @@ def simplify(pts, tol=1.5):
     return out[:-1] if len(out) > 1 and out[0] == out[-1] else out
 
 
-def outline_path(alpha, w_mm, h_mm, rot=False, tol=1.5, uu_per_mm=96.0 / 25.4):
+def _bezier_ring(pts, tension=1.0):
+    """Closed cubic Bezier through every point, Catmull-Rom style.
+
+    A simplified boundary is a polyline, and a polyline cuts as visible flat
+    facets. Placing the control points at p +/- (next - prev) / 6 turns it into
+    a curve that still passes through each point, so the shape is unchanged but
+    the corners between segments disappear.
+    """
+    n = len(pts)
+    P = [np.asarray(p, float) for p in pts]
+    out = [f"M{P[0][0]:.2f},{P[0][1]:.2f}"]
+    k = tension / 6.0
+    for i in range(n):
+        p0, p1, p2, p3 = P[(i - 1) % n], P[i], P[(i + 1) % n], P[(i + 2) % n]
+        c1 = p1 + (p2 - p0) * k
+        c2 = p2 - (p3 - p1) * k
+        out.append(f"C{c1[0]:.2f},{c1[1]:.2f} {c2[0]:.2f},{c2[1]:.2f} "
+                   f"{p2[0]:.2f},{p2[1]:.2f}")
+    return " ".join(out) + " Z"
+
+
+def outline_path(alpha, w_mm, h_mm, rot=False, tol=1.5, uu_per_mm=96.0 / 25.4,
+                 curves=True):
     """SVG path 'd' for the silhouette, scaled into a w x h mm box at 0,0."""
     a = np.rot90(alpha) if rot else alpha
     pts = simplify(trace_outline(a), tol)
     ah, aw = a.shape
     sx, sy = w_mm * uu_per_mm / aw, h_mm * uu_per_mm / ah
-    d = " ".join(("M" if i == 0 else "L") + f"{x*sx:.2f},{y*sy:.2f}"
-                 for i, (x, y) in enumerate(pts))
-    return d + " Z", len(pts)
+    scaled = [(x * sx, y * sy) for x, y in pts]
+    if curves and len(scaled) >= 3:
+        return _bezier_ring(scaled), len(scaled)
+    d = " ".join(("M" if i == 0 else "L") + f"{x:.2f},{y:.2f}"
+                 for i, (x, y) in enumerate(scaled))
+    return d + " Z", len(scaled)
 
 
 # ---------------------------------------------------------------------------
@@ -377,6 +402,27 @@ def _smooth(mask, r):
     return _nd.distance_transform_edt(grown) > r
 
 
+def smooth_mask(mask, r):
+    """Round a silhouette off.
+
+    Closing alone only fixes concave detail: it fills notches but leaves every
+    convex spike exactly as sharp as it was. Blurring the mask and
+    re-thresholding rounds both directions, and unlike a morphological opening
+    it does not amputate thin features like ears or a lollipop stick, which
+    survive as long as they are wider than roughly 1.7 sigma.
+
+    The closing also absorbs detached pieces sitting within 2r, which is what
+    you want on a sticker: one outline around the whole design rather than a
+    cut that leaves the loose bits behind.
+    """
+    if r <= 0:
+        return mask
+    from scipy import ndimage as _nd
+    m = _smooth(mask, r)
+    f = _nd.gaussian_filter(m.astype(np.float32), sigma=r * 0.5)
+    return f >= 0.5
+
+
 def add_border(rgba, px, colour=(255, 255, 255), smooth=None):
     """Add a rim around the silhouette, expanding the canvas to suit.
 
@@ -389,14 +435,16 @@ def add_border(rgba, px, colour=(255, 255, 255), smooth=None):
     from PIL import Image as _I
 
     p = float(px)
-    if p <= 0:
-        return rgba
     s = p * 0.6 if smooth is None else float(smooth)
-    pad = int(np.ceil(p + s)) + 2
+    if p <= 0 and s <= 0:
+        return rgba
+    pad = int(np.ceil(p + 2 * s)) + 2
 
     a = np.pad(np.asarray(rgba.convert("RGBA")), ((pad, pad), (pad, pad), (0, 0)))
     solid = a[:, :, 3] >= 128
-    grown = _smooth(_disk_offset(solid, p), s)
+    # Smooth the silhouette first, then offset it. Smoothing the offset instead
+    # would round the rim but leave the art's own jags showing through it.
+    grown = _disk_offset(smooth_mask(solid, s), p)
 
     # signed distance, negative inside, for a one pixel antialiased edge
     sd = (_nd.distance_transform_edt(~grown).astype(np.float32)

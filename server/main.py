@@ -231,7 +231,7 @@ async def stickers_pack(files: list[UploadFile] = File(default=[]),
                         radius_mm: float = Form(0.0),
                         paper: str = Form("letter"),
                         split: str = Form("auto"),
-                        smooth: float = Form(0.6)):
+                        smooth_mm: float = Form(3.0)):
     if not files:
         raise HTTPException(400, "Drop some sticker images first.")
     if paper not in STK.USABLE:
@@ -253,7 +253,7 @@ async def stickers_pack(files: list[UploadFile] = File(default=[]),
         r = STK.layout(arts, gap_mm=gap_mm, border_mm=border_mm,
                        add_border=add_border, die_cut=tri.get(die_cut),
                        paper=paper, radius_mm=radius_mm,
-                       split=tri.get(split), smooth=smooth)
+                       split=tri.get(split), smooth_mm=smooth_mm)
     except ValueError as e:
         raise HTTPException(400, str(e))
 

@@ -185,7 +185,7 @@ def sheet_image(ordered, arts, dpi=300):
 
 def layout(arts, *, gap_mm=2.0, border_mm=0.9, add_border=True, die_cut=None,
            paper="letter", corner_cut_mm=CORNER_CUT_MM, radius_mm=0.0,
-           split=None, smooth=0.6):
+           split=None, smooth_mm=3.0):
     """Pack RGBA images. Returns a dict of everything the callers need.
 
     split=None splits a lone image into its separate stickers when it clearly
@@ -230,28 +230,37 @@ def layout(arts, *, gap_mm=2.0, border_mm=0.9, add_border=True, die_cut=None,
         if kept:
             notes.append(f"{kept} already had a border, left alone")
         if need:
-            # The rim is given in mm at the printed size, but adding rims
+            # The rim is specified in mm at the printed size, but adding it
             # changes the silhouettes, which changes the pack, which changes
-            # the printed size. Re-add from the ORIGINAL art each pass so rims
-            # never compound, and iterate to a fixed point. For a rim of w mm
-            # on art o px wide printed p mm wide: b = w*o / (p - 2w).
+            # the printed size. Smoothing makes it worse: the canvas also grows
+            # to hold the radius. Rather than model all that, measure what came
+            # out and correct proportionally. Re-add from the ORIGINAL art each
+            # pass so rims never compound.
             orig = [arts[i] for i in need]
-            for _ in range(4):
-                prev = area
+            guess = [border_mm * o.width / max((area * (o.width / o.height)) ** 0.5, 1e-6)
+                     for o in orig]
+            for _ in range(6):
                 for n, i in enumerate(need):
-                    printed_w = (area * aspects[i]) ** 0.5
-                    denom = printed_w - 2 * border_mm
-                    if denom <= 0:
-                        continue
-                    px = border_mm * orig[n].width / denom
-                    arts[i] = pack.add_border(orig[n], px, smooth=px * smooth)
+                    printed_w = max((area * aspects[i]) ** 0.5, 1e-6)
+                    per_mm = orig[n].width / printed_w      # source px per mm
+                    arts[i] = pack.add_border(orig[n], guess[n],
+                                              smooth=smooth_mm * per_mm)
                     alphas[i] = np.asarray(arts[i])[:, :, 3]
                     aspects[i] = arts[i].width / arts[i].height
                 area, placed = pack.solve_shapes(alphas, region, gap_mm=gap_mm)
                 if not placed:
                     raise ValueError("Could not fit the stickers once rims "
                                      "were added. Try a smaller gap or rim.")
-                if abs(area - prev) / max(area, 1) < 0.01:
+                worst = 0.0
+                for n, i in enumerate(need):
+                    printed_w = (area * aspects[i]) ** 0.5
+                    got = pack.detect_border(arts[i]) * printed_w / arts[i].width
+                    if got <= 0:
+                        continue
+                    corr = border_mm / got
+                    guess[n] *= min(max(corr, 0.4), 2.5)    # damp wild swings
+                    worst = max(worst, abs(corr - 1))
+                if worst < 0.06:
                     break
             got = [pack.detect_border(arts[i]) * (area * aspects[i]) ** 0.5
                    / arts[i].width for i in need]
