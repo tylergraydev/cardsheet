@@ -64,7 +64,7 @@ def stamp(template_pdf: bytes, slots: list[S.Slot], art: dict[int, Image.Image],
             continue
         w_px, h_px = bx1 - bx0, by1 - by0
         placements.append((
-            S.cover(im, w_px, h_px),
+            S.cover_with_bleed(im, slot, (bx0, by0, bx1, by1)),
             (bx0 * k, ph_pt - by1 * k, w_px * k, h_px * k),
         ))
 

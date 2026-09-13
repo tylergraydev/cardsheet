@@ -137,6 +137,24 @@ def cover(img: Image.Image, w: int, h: int) -> Image.Image:
     return img.crop((left, top, left + w, top + h))
 
 
+def cover_with_bleed(img: Image.Image, slot: Slot, box) -> Image.Image:
+    """Fit art to the cut line, then extend its edge pixels into the bleed.
+
+    Scaling the art to fill the whole bleed box instead would zoom in and crop
+    the outer millimetre away, thinning any border the card was drawn with.
+    Replicating the outermost row of pixels keeps the art at its intended size
+    and still gives the cutter something real to land on when it drifts.
+    """
+    bx0, by0, bx1, by1 = box
+    core = cover(img, slot.w, slot.h)
+    left, top = slot.x - bx0, slot.y - by0
+    right, bottom = bx1 - (slot.x + slot.w), by1 - (slot.y + slot.h)
+    if not (left or top or right or bottom):
+        return core
+    a = np.pad(np.asarray(core), ((top, bottom), (left, right), (0, 0)), mode="edge")
+    return Image.fromarray(a)
+
+
 def bleed_boxes(slots: list[Slot], bleed_px: int, size: tuple[int, int]):
     pw, ph = size
     return [(max(0, s.x - bleed_px), max(0, s.y - bleed_px),
@@ -173,7 +191,7 @@ def compose(template: Image.Image, slots: list[Slot],
         if im is None:
             continue
         bx0, by0, bx1, by1 = box
-        sheet.paste(cover(im, bx1 - bx0, by1 - by0), (bx0, by0))
+        sheet.paste(cover_with_bleed(im, slot, box), (bx0, by0))
 
     if key_mask(np.asarray(sheet)).any():
         warnings.append("Some slots are still empty and will print magenta.")
