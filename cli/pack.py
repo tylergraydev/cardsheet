@@ -20,7 +20,11 @@ position is legal exactly when the window sum over the occupancy mask is zero.
 """
 from __future__ import annotations
 
+import sys
+
 import numpy as np
+
+sys.setrecursionlimit(20000)
 
 MM_PER_IN = 25.4
 
@@ -144,3 +148,177 @@ def solve(aspects, region, gap_mm=2.0, tol=1.0):
         else:
             hi = mid
     return lo, best
+
+
+# ---------------------------------------------------------------------------
+# Irregular (die-cut) stickers.
+#
+# Packing bounding boxes wastes whatever the silhouette does not fill, which
+# for these is about a third. Nesting lets one sticker's concave gap hold a
+# neighbour's tail. The region is already a mask, so the only change is the
+# legality test: instead of asking whether a rectangular window is clear, ask
+# whether the SHAPE overlaps anything, which is a correlation. Zero overlap
+# positions are exactly where the convolution is zero.
+# ---------------------------------------------------------------------------
+
+def _shape_cells(alpha, w_mm, h_mm, res, grow_cells):
+    """Resample an alpha mask to w x h mm in grid cells, grown by the gap."""
+    from PIL import Image as _I
+    from scipy import ndimage as _nd
+    wc = max(1, int(round(w_mm / res)))
+    hc = max(1, int(round(h_mm / res)))
+    im = _I.fromarray((alpha >= 128).astype(np.uint8) * 255).resize((wc, hc), _I.BILINEAR)
+    m = np.asarray(im) >= 128
+    if grow_cells > 0:
+        m = _nd.binary_dilation(m, iterations=int(grow_cells))
+    return m
+
+
+def _place_shapes(items, region, gap_mm):
+    """items = [(alpha, w_mm, h_mm, index)] largest first. None if any fails."""
+    from scipy.signal import fftconvolve
+    res = region.res
+    occ = region.blocked.copy()
+    grow = max(0, int(round(gap_mm / 2 / res)))
+    out = []
+    for alpha, w, h, idx in items:
+        best = None
+        for rot in (False, True):
+            a = np.rot90(alpha) if rot else alpha
+            ww, hh = (h, w) if rot else (w, h)
+            s = _shape_cells(a, ww, hh, res, grow)
+            if s.shape[0] > occ.shape[0] or s.shape[1] > occ.shape[1]:
+                continue
+            conv = fftconvolve(occ.astype(np.float32), s[::-1, ::-1].astype(np.float32),
+                               mode="valid")
+            ys, xs = np.nonzero(conv < 0.5)
+            if len(ys) == 0:
+                continue
+            i = np.lexsort((xs, ys))[0]
+            cand = (int(ys[i]), int(xs[i]), s, ww, hh, rot)
+            if best is None or cand[:2] < best[:2]:
+                best = cand
+        if best is None:
+            return None
+        cy, cx, s, ww, hh, rot = best
+        occ[cy:cy + s.shape[0], cx:cx + s.shape[1]] |= s
+        out.append((cx * res, cy * res, ww, hh, idx, rot))
+    return out
+
+
+def fits_shapes(alphas, aspects, area, region, gap_mm, restarts=2):
+    dims = [(alphas[i], float(np.sqrt(area * a)), float(np.sqrt(area / a)), i)
+            for i, a in enumerate(aspects)]
+    orders = [sorted(dims, key=lambda d: -max(d[1], d[2])),
+              sorted(dims, key=lambda d: -d[2])]
+    rng = np.random.default_rng(99)
+    orders += [[dims[i] for i in rng.permutation(len(dims))] for _ in range(restarts)]
+    for o in orders:
+        got = _place_shapes(o, region, gap_mm)
+        if got:
+            return got
+    return None
+
+
+def solve_shapes(alphas, region, gap_mm=2.0, tol=2.0):
+    """Largest equal BOUNDING-BOX area that fits when shapes may interlock."""
+    aspects = [a.shape[1] / a.shape[0] for a in alphas]
+    hi = region.area_mm2() / max(len(alphas), 1) * 2.5
+    lo, best = 0.0, None
+    for _ in range(30):
+        if hi - lo < tol:
+            break
+        mid = (lo + hi) / 2
+        got = fits_shapes(alphas, aspects, mid, region, gap_mm)
+        if got:
+            lo, best = mid, got
+        else:
+            hi = mid
+    return lo, best
+
+
+# ---------------------------------------------------------------------------
+# Turning an alpha mask into a cut path.
+#
+# Design Space needs a vector outline, so the silhouette is boundary-traced
+# (Moore neighbourhood) and then simplified with Douglas-Peucker. Traced at the
+# image's own resolution and scaled afterwards, so simplification tolerance is
+# in source pixels and does not change with the printed size.
+# ---------------------------------------------------------------------------
+
+_MOORE = [(-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1)]
+
+
+def trace_outline(alpha, thresh=128):
+    """Outer boundary of the largest blob, as [(x, y)] in pixel coords."""
+    from scipy import ndimage as _nd
+    m = alpha >= thresh
+    lab, n = _nd.label(m)
+    if n == 0:
+        raise ValueError("empty alpha")
+    sizes = _nd.sum(m, lab, range(1, n + 1))
+    m = (lab == (int(np.argmax(sizes)) + 1))
+    m = _nd.binary_fill_holes(m)
+    m = np.pad(m, 1)
+
+    ys, xs = np.nonzero(m)
+    y0 = int(ys.min())
+    x0 = int(xs[ys == y0].min())
+    start = (y0, x0)
+
+    # Moore-neighbour tracing. _MOORE runs clockwise from north, so the
+    # opposite of direction d is (d + 4) % 8. The pixel west of the topmost,
+    # leftmost pixel is always background, so start backtracking from west.
+    b_px, back = start, 6
+    out = []
+    for _ in range(4 * m.size):
+        out.append((b_px[1] - 1, b_px[0] - 1))      # undo the pad
+        moved = False
+        for k in range(1, 9):
+            d = (back + k) % 8
+            ny, nx = b_px[0] + _MOORE[d][0], b_px[1] + _MOORE[d][1]
+            if m[ny, nx]:
+                b_px, back = (ny, nx), (d + 4) % 8  # resume just past where we came from
+                moved = True
+                break
+        if not moved or (len(out) > 2 and b_px == start):
+            break
+    return out
+
+
+def simplify(pts, tol=1.5):
+    """Douglas-Peucker on a closed ring."""
+    if len(pts) < 3:
+        return pts
+
+    def dp(p):
+        if len(p) < 3:
+            return p
+        a, b = np.array(p[0]), np.array(p[-1])
+        ab = b - a
+        n = np.hypot(*ab)
+        P = np.array(p)
+        if n == 0:
+            d = np.hypot(*(P - a).T)
+        else:
+            d = np.abs(np.cross(ab, P - a)) / n
+        i = int(np.argmax(d))
+        if d[i] <= tol:
+            return [p[0], p[-1]]
+        return dp(p[:i + 1])[:-1] + dp(p[i:])
+
+    ring = list(pts) + [pts[0]]
+    half = len(ring) // 2
+    out = dp(ring[:half + 1])[:-1] + dp(ring[half:])
+    return out[:-1] if len(out) > 1 and out[0] == out[-1] else out
+
+
+def outline_path(alpha, w_mm, h_mm, rot=False, tol=1.5, uu_per_mm=96.0 / 25.4):
+    """SVG path 'd' for the silhouette, scaled into a w x h mm box at 0,0."""
+    a = np.rot90(alpha) if rot else alpha
+    pts = simplify(trace_outline(a), tol)
+    ah, aw = a.shape
+    sx, sy = w_mm * uu_per_mm / aw, h_mm * uu_per_mm / ah
+    d = " ".join(("M" if i == 0 else "L") + f"{x*sx:.2f},{y*sy:.2f}"
+                 for i, (x, y) in enumerate(pts))
+    return d + " Z", len(pts)

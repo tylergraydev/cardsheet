@@ -70,7 +70,8 @@ web/           Svelte 5 + Vite 6, built to static, served by FastAPI.
 cli/           Standalone scripts. cardsheet.py does the same job headless;
                make_template.py generates placeholder SVGs; make_fixture.py
                builds a synthetic template so you can test without Tyler's PDF;
-               pack.py + make_sticker_template.py lay out N stickers.
+               pack.py + make_sticker_template.py lay out N stickers,
+               die-cutting the silhouette when the art has alpha.
 templates/     Ready-made placeholder SVGs to upload to Design Space.
 ```
 
