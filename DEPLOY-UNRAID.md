@@ -28,7 +28,7 @@ If `gh` is not installed, make the repo at
 and then just `git push -u origin main`.
 
 `.github/workflows/docker.yml` is already in the tree. It builds on every push
-to `main` and publishes `ghcr.io/<you>/cardsheet-app:latest` plus a
+to `main` and publishes `ghcr.io/tylergraydev/cardsheet:latest` plus a
 short-SHA tag. No secrets to configure, `GITHUB_TOKEN` covers GHCR.
 
 Watch the first run:
