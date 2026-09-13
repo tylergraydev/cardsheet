@@ -1,14 +1,16 @@
 <script>
   import TemplateSetup from './lib/TemplateSetup.svelte'
   import Sheet from './lib/Sheet.svelte'
+  import Stickers from './lib/Stickers.svelte'
 
+  let mode = $state('cards')        // 'cards' | 'stickers'
   let template = $state(null)
   let loading = $state(true)
   let error = $state('')
 
   // slot index -> { file, url, name }
   let cards = $state({})
-  let bleedMm = $state(3.2)
+  let bleedMm = $state(0.76)   // Cricut's own Print Then Cut bleed, 0.03 in
   let result = $state(null)
   let verify = $state(null)
   let busy = $state(false)
@@ -99,8 +101,12 @@
   <div class="brand">
     <span class="dot"></span>
     <h1>cardsheet</h1>
+    <nav class="modes">
+      <button class:on={mode === 'cards'} onclick={() => (mode = 'cards')}>Cards</button>
+      <button class:on={mode === 'stickers'} onclick={() => (mode = 'stickers')}>Stickers</button>
+    </nav>
   </div>
-  {#if template}
+  {#if template && mode === 'cards'}
     <div class="status">
       <span class="mono">{template.slots.length} slots</span>
       <span class="sep">·</span>
@@ -112,7 +118,9 @@
 </header>
 
 <main>
-  {#if loading}
+  {#if mode === 'stickers'}
+    <Stickers />
+  {:else if loading}
     <p class="muted pad">Loading…</p>
   {:else if !template}
     <TemplateSetup {error} on:loaded={refresh} />
@@ -146,21 +154,23 @@
         <section>
           <h2>Bleed</h2>
           <div class="row">
-            <input type="range" min="0" max={maxBleed} step="0.1" bind:value={bleedMm}
+            <input type="range" min="0" max={maxBleed} step="0.02" bind:value={bleedMm}
                    oninput={() => { result = null; verify = null }} />
-            <span class="mono val">{bleedMm.toFixed(1)} mm</span>
+            <span class="mono val">{bleedMm.toFixed(2)} mm</span>
           </div>
           <p class="hint">
-            How far art extends past the cut line. Print Then Cut drifts about
-            ±1 mm, so 3 mm hides it. Art gets cropped to fill card + bleed.
+            How far art extends past the cut line. Cricut's own bleed is
+            0.76 mm (0.03 in), so that is the value to match. Your art is not
+            scaled or cropped: the outermost pixels are extended outward,
+            which is what Design Space does too.
           </p>
-          {#if template.max_bleed_mm != null && template.max_bleed_mm < 1.5}
+          {#if template.max_bleed_mm != null && template.max_bleed_mm < 0.76}
             <div class="notice warn">
               <strong>Your cards are only {template.min_gap_mm} mm apart.</strong>
-              That caps bleed at {template.max_bleed_mm} mm, below the ±1 mm this
-              process drifts. Widen the gaps in the Design Space template, and check
-              Bleed was OFF when you exported: Design Space's own bleed inflates the
-              placeholders and eats the gap.
+              That caps bleed at {template.max_bleed_mm} mm, under the 0.76 mm
+              Cricut itself uses. Widen the gaps in the Design Space template, and
+              check Bleed was OFF when you exported: Design Space's own bleed
+              inflates the placeholders and eats the gap.
             </div>
           {/if}
         </section>
@@ -302,4 +312,12 @@
     background: color-mix(in srgb, var(--err) 14%, transparent);
     border-color: color-mix(in srgb, var(--err) 40%, transparent);
   }
+  .modes { display: flex; gap: 2px; margin-left: 14px; }
+  .modes button {
+    background: none; border: 1px solid transparent; border-radius: 5px;
+    padding: 4px 12px; cursor: pointer; color: inherit; opacity: .55;
+    font: inherit; font-size: 13px;
+  }
+  .modes button:hover { opacity: .85; }
+  .modes button.on { opacity: 1; border-color: currentColor; }
 </style>

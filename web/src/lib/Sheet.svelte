@@ -17,6 +17,15 @@
            `width:${(w / pw) * 100}%;height:${(h / ph) * 100}%;`
   }
 
+  /** Art occupies the cut rect inside the (bleed-expanded) slot box.
+      The server pads outward from here by replicating edge pixels, so the
+      art itself must not change size when the bleed slider moves. */
+  function artBox(s) {
+    const w = s.w + bleedPx * 2, h = s.h + bleedPx * 2
+    const ix = (bleedPx / w) * 100, iy = (bleedPx / h) * 100
+    return `left:${ix}%;top:${iy}%;width:${100 - ix * 2}%;height:${100 - iy * 2}%;`
+  }
+
   function cutBox(s) {
     return `left:${(s.x / pw) * 100}%;top:${(s.y / ph) * 100}%;` +
            `width:${(s.w / pw) * 100}%;height:${(s.h / ph) * 100}%;`
@@ -62,7 +71,7 @@
            aria-label={`Card slot ${s.index + 1}`}>
 
         {#if cards[s.index]}
-          <img class="art" src={cards[s.index].url} alt="" />
+          <img class="art" style={artBox(s)} src={cards[s.index].url} alt="" />
         {:else}
           <div class="empty">
             <span class="num">{s.index + 1}</span>
@@ -120,12 +129,14 @@
     background: color-mix(in srgb, var(--bleed) 7%, transparent);
     transition: border-color .12s, background .12s, box-shadow .12s;
   }
-  .slot.has { border-style: solid; background: none; }
+  .slot.has { border-style: solid; }
   .slot.over {
     border-color: var(--accent); border-style: solid;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
   }
-  .art { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .art { position: absolute; object-fit: cover; display: block; }
+  /* the ring left over is the bleed, painted by edge replication on the server */
+  .slot.has { background: color-mix(in srgb, var(--bleed) 22%, transparent); }
 
   .paper > .cut {
     position: absolute; pointer-events: none;

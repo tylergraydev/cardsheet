@@ -16,11 +16,13 @@ from PIL import Image
 
 import sheet as S
 import stamp as ST
+import stickers as STK
 
 DATA = Path(os.environ.get("CARDSHEET_DATA", "/data"))
 TEMPLATE_PDF = DATA / "ds_template.pdf"
 META_JSON = DATA / "template.json"
 SHEETS = DATA / "sheets"
+STICKERS = DATA / "stickers"
 STATIC = Path(os.environ.get("CARDSHEET_STATIC", "/app/static"))
 MAX_UPLOAD = 40 * 1024 * 1024
 
@@ -212,6 +214,98 @@ def get_sheet_png(sid: str, guides: bool = False):
     _, slots = load_template()
     return Response(S.preview_png(img, slots or [], 0, guides=guides),
                     media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+# --------------------------------------------------------------------------
+# Sticker sheets. Unrelated to the card template: this packs N stickers as
+# large as they will go and hands back a magenta template for Design Space
+# plus a print-ready transparent sheet.
+# --------------------------------------------------------------------------
+
+@app.post("/api/stickers/pack")
+async def stickers_pack(files: list[UploadFile] = File(default=[]),
+                        gap_mm: float = Form(3.0),
+                        border_mm: float = Form(0.9),
+                        add_border: bool = Form(True),
+                        die_cut: str = Form("auto"),
+                        radius_mm: float = Form(0.0),
+                        paper: str = Form("letter")):
+    if not files:
+        raise HTTPException(400, "Drop some sticker images first.")
+    if paper not in STK.USABLE:
+        raise HTTPException(400, f"Unknown paper size {paper!r}.")
+
+    arts, names = [], []
+    for f in files:
+        raw = await f.read()
+        if len(raw) > MAX_UPLOAD:
+            raise HTTPException(413, f"{f.filename} is too large.")
+        try:
+            arts.append(Image.open(io.BytesIO(raw)).convert("RGBA"))
+        except Exception:
+            raise HTTPException(400, f"{f.filename} is not a readable image.")
+        names.append(f.filename)
+
+    die = {"auto": None, "yes": True, "no": False}.get(die_cut, None)
+    try:
+        r = STK.layout(arts, gap_mm=gap_mm, border_mm=border_mm,
+                       add_border=add_border, die_cut=die, paper=paper,
+                       radius_mm=radius_mm)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    sid = uuid.uuid4().hex[:12]
+    d = STICKERS / sid
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "template.svg").write_text(r["svg"], encoding="utf-8")
+    sheet, gw, gh = STK.sheet_image(r["ordered"], r["arts"])
+    sheet.save(d / "sheet.png", dpi=(300, 300))
+    STK.preview_image(r["ordered"], r["region"], outlines=r["outlines"]).save(
+        d / "preview.png")
+
+    slots = [dict(s, name=names[s["index"]]) for s in r["slots"]]
+    (d / "layout.json").write_text(json.dumps(slots, indent=2), encoding="utf-8")
+    return JSONResponse({
+        "id": sid,
+        "count": len(arts),
+        "die_cut": r["die_cut"],
+        "area_mm2": round(r["area_mm2"]),
+        "typical_mm": round(r["area_mm2"] ** 0.5, 1),
+        "group_mm": r["group_mm"],
+        "group_in": [round(gw / 25.4, 3), round(gh / 25.4, 3)],
+        "dpi": r["dpi"],
+        "rotated": r["rotated"],
+        "notes": r["notes"],
+        "slots": slots,
+        "sheet": f"/api/stickers/{sid}/sheet.png",
+        "preview": f"/api/stickers/{sid}/preview.png",
+        "svg": f"/api/stickers/{sid}/template.svg",
+    })
+
+
+def _sticker_file(sid: str, name: str, media: str):
+    safe = "".join(c for c in sid if c.isalnum())
+    p = STICKERS / safe / name
+    if not p.exists():
+        raise HTTPException(404, "No such sticker sheet.")
+    disp = "attachment" if name.endswith(".svg") else "inline"
+    return FileResponse(p, media_type=media, headers={
+        "Content-Disposition": f'{disp}; filename=cardsheet_stickers_{safe}_{name}'})
+
+
+@app.get("/api/stickers/{sid}/sheet.png")
+def sticker_sheet(sid: str):
+    return _sticker_file(sid, "sheet.png", "image/png")
+
+
+@app.get("/api/stickers/{sid}/preview.png")
+def sticker_preview(sid: str):
+    return _sticker_file(sid, "preview.png", "image/png")
+
+
+@app.get("/api/stickers/{sid}/template.svg")
+def sticker_svg(sid: str):
+    return _sticker_file(sid, "template.svg", "image/svg+xml")
 
 
 @app.get("/api/health")

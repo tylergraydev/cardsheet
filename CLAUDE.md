@@ -65,13 +65,13 @@ There is a legacy raster path (`sheet.compose`) that rebuilds the page as a
 
 ```
 server/        FastAPI. sheet.py = detection/geometry, stamp.py = PDF overlay
-               + verification, main.py = routes.
+               + verification, main.py = routes, pack.py = sticker packing,
+               stickers.py = sticker sheet layout (shared with the CLI).
 web/           Svelte 5 + Vite 6, built to static, served by FastAPI.
 cli/           Standalone scripts. cardsheet.py does the same job headless;
                make_template.py generates placeholder SVGs; make_fixture.py
                builds a synthetic template so you can test without Tyler's PDF;
-               pack.py + make_sticker_template.py lay out N stickers,
-               die-cutting the silhouette when the art has alpha.
+               make_sticker_template.py is a thin CLI over server/stickers.py.
 templates/     Ready-made placeholder SVGs to upload to Design Space.
 ```
 
