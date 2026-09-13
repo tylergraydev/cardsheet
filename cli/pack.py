@@ -322,3 +322,48 @@ def outline_path(alpha, w_mm, h_mm, rot=False, tol=1.5, uu_per_mm=96.0 / 25.4):
     d = " ".join(("M" if i == 0 else "L") + f"{x*sx:.2f},{y*sy:.2f}"
                  for i, (x, y) in enumerate(pts))
     return d + " Z", len(pts)
+
+
+# ---------------------------------------------------------------------------
+# Sticker borders.
+#
+# Some art already has the white rim drawn in, some does not. Telling them
+# apart is easy: walk inward from the alpha edge one pixel ring at a time and
+# count how many consecutive rings are near-white. Art with a rim gives several
+# such rings, art without gives none, because the first ring is already
+# artwork.
+# ---------------------------------------------------------------------------
+
+def detect_border(rgba, max_depth=14, white=235, frac=0.70):
+    """Thickness in pixels of an existing white rim. 0 means none."""
+    from scipy import ndimage as _nd
+    a = np.asarray(rgba)
+    alpha = a[:, :, 3] >= 128
+    rgb = a[:, :, :3]
+    prev = alpha
+    depth = 0
+    for d in range(1, max_depth + 1):
+        er = _nd.binary_erosion(alpha, iterations=d)
+        ring = prev & ~er
+        if not ring.any():
+            break
+        if (rgb[ring] >= white).all(axis=1).mean() < frac:
+            break
+        depth = d
+        prev = er
+    return depth
+
+
+def add_border(rgba, px, colour=(255, 255, 255)):
+    """Grow a solid rim around the silhouette, expanding the canvas to suit."""
+    from scipy import ndimage as _nd
+    from PIL import Image as _I
+    p = int(round(px))
+    if p <= 0:
+        return rgba
+    a = np.pad(np.asarray(rgba.convert("RGBA")), ((p, p), (p, p), (0, 0)))
+    alpha = a[:, :, 3] >= 128
+    ring = _nd.binary_dilation(alpha, iterations=p) & ~alpha
+    out = a.copy()
+    out[ring] = (*colour, 255)
+    return _I.fromarray(out)

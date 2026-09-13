@@ -129,6 +129,27 @@ def preview(ordered, region, path, scale=3, outlines=None):
     im.save(path)
 
 
+def sheet_png(ordered, arts, path, dpi=300):
+    """The packed sheet as one transparent PNG, ready to upload for
+    Print Then Cut. Design Space traces the cut line from the alpha itself, so
+    this route needs no magenta template at all."""
+    k = dpi / MM_PER_IN
+    xs0 = min(p[0] for p in ordered)
+    ys0 = min(p[1] for p in ordered)
+    w = max(p[0] + p[2] for p in ordered) - xs0
+    h = max(p[1] + p[3] for p in ordered) - ys0
+    canvas = Image.new("RGBA", (int(round(w * k)), int(round(h * k))), (0, 0, 0, 0))
+    for (x, y, pw, ph, idx, rot) in ordered:
+        im = arts[idx]
+        if rot:
+            im = im.transpose(Image.ROTATE_90)
+        im = im.resize((max(1, int(round(pw * k))), max(1, int(round(ph * k)))),
+                       Image.LANCZOS)
+        canvas.alpha_composite(im, (int(round((x - xs0) * k)), int(round((y - ys0) * k))))
+    canvas.save(path, dpi=(dpi, dpi))
+    return canvas.size, w, h
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("images", nargs="+", help="sticker image files")
@@ -142,14 +163,20 @@ def main():
                     help="cut the silhouette (default when every image has alpha)")
     ap.add_argument("--no-die-cut", dest="die_cut", action="store_false",
                     help="cut rectangles even when the art is transparent")
+    ap.add_argument("--border", default="0.9mm",
+                    help="rim to add to art that has none (default 0.9mm); "
+                         "art that already has a border is left alone")
+    ap.add_argument("--no-border", action="store_true",
+                    help="never add a rim, even to art without one")
     ap.add_argument("-o", "--out", default="sticker_template.svg")
     a = ap.parse_args()
 
     paths = [pathlib.Path(p) for p in a.images]
-    aspects, alphas = [], []
+    arts, aspects, alphas = [], [], []
     for p in paths:
         with Image.open(p) as im:
             rgba = im.convert("RGBA")
+            arts.append(rgba)
             aspects.append(rgba.width / rgba.height)
             alphas.append(np.asarray(rgba)[:, :, 3])
 
@@ -171,6 +198,46 @@ def main():
     if not placed:
         sys.exit(f"Could not fit {len(paths)} stickers with a {gap:g} mm gap.")
 
+    # Add a rim only to art that lacks one. The rim is specified in mm at the
+    # printed size, which is not known until the first pack has run, so the
+    # first pack sets the scale and the sheet is packed again with the new
+    # silhouettes. One extra pass is enough: a thin rim barely moves the size.
+    if die and not a.no_border:
+        want = to_mm(a.border)
+        found = [pack.detect_border(im) for im in arts]
+        need = [i for i, h in enumerate(found) if h == 0]
+        kept = len(found) - len(need)
+        if kept:
+            print(f"  {kept} image(s) already had a border, left alone")
+        if need:
+            # Chicken and egg: the rim is specified in mm at the printed size,
+            # but adding rims changes the silhouettes, which changes the pack,
+            # which changes the printed size. Re-add from the ORIGINAL art each
+            # time so rims never compound, and iterate to a fixed point. For a
+            # rim of w mm on art o px wide printed p mm wide,
+            #     b * p / (o + 2b) = w   ->   b = w*o / (p - 2w)
+            orig = [arts[i] for i in need]
+            for _ in range(4):
+                prev = area
+                for n, i in enumerate(need):
+                    printed_w = (area * aspects[i]) ** 0.5
+                    denom = printed_w - 2 * want
+                    if denom <= 0:
+                        continue
+                    px = want * orig[n].width / denom
+                    arts[i] = pack.add_border(orig[n], px)
+                    alphas[i] = np.asarray(arts[i])[:, :, 3]
+                    aspects[i] = arts[i].width / arts[i].height
+                area, placed = pack.solve_shapes(alphas, region, gap_mm=gap)
+                if not placed:
+                    sys.exit("Could not fit the stickers once rims were added.")
+                if abs(area - prev) / max(area, 1) < 0.01:
+                    break
+            got = [pack.detect_border(arts[i]) * (area * aspects[i]) ** 0.5
+                   / arts[i].width for i in need]
+            print(f"  added a rim to {len(need)} image(s) that had none, "
+                  f"{min(got):.2f} to {max(got):.2f} mm (asked {want:g} mm)")
+
     ordered = reading_order(placed)
     outs = [(alphas[p[4]], p[5]) for p in ordered] if die else None
     svg, gw, gh = build_svg(ordered, to_mm(a.radius), outlines=outs)
@@ -182,7 +249,11 @@ def main():
                 "h_mm": round(p[3], 2), "rotated": p[5]}
                for n, p in enumerate(ordered)]
     out.with_suffix(".json").write_text(json.dumps(mapping, indent=2), encoding="utf-8")
-    preview(ordered, region, out.with_suffix(".png"), outlines=outs)
+
+    prev_path = out.with_name(out.stem + "_preview.png")
+    sheet_path = out.with_name(out.stem + "_sheet.png")
+    preview(ordered, region, prev_path, outlines=outs)
+    (sw, sh), gw2, gh2 = sheet_png(ordered, arts, sheet_path)
 
     side = area ** 0.5
     dpi = [min(alphas[p[4]].shape[1] / (p[2] / MM_PER_IN),
@@ -198,7 +269,11 @@ def main():
     if rot:
         print(f"  {rot} rotated 90 degrees to fit")
     print(f"  {out.with_suffix('.json').name} maps image -> slot")
-    print(f"  {out.with_suffix('.png').name} previews the layout")
+    print(f"  {prev_path.name} previews the layout")
+    print(f"  {sheet_path.name} is the print-ready transparent sheet, "
+          f"{sw} x {sh} px at 300 dpi")
+    print(f"    upload that straight to Design Space and set it to "
+          f"{gw2:.1f} x {gh2:.1f} mm ({gw2/MM_PER_IN:.3f} x {gh2/MM_PER_IN:.3f} in)")
 
 
 if __name__ == "__main__":
