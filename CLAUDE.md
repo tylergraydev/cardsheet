@@ -47,6 +47,16 @@ There is a legacy raster path (`sheet.compose`) that rebuilds the page as a
   `cover_with_bleed()` fits art to the cut line and pads outward with
   `np.pad(mode="edge")`. Scaling to fill the bleed box instead would zoom in
   and crop the outer millimetre, thinning any drawn border.
+- **The Print Then Cut area is not a rectangle.** Cricut parks a ~1 inch
+  registration mark in each corner, so the usable region is a rectangle with
+  the corners cut away in a staircase. Measured on Letter: a 188.5 x 251.4 mm
+  bounding box (matching `PAPER["letter"]`), corners eaten about 33 mm.
+  `pack.Region` carries this as a raster mask, never as a width and height, so
+  correcting the shape never touches the packing algorithm.
+- **Design Space sizes the marks around your design.** They are not at fixed
+  page positions. In the real template the marks sit exactly 0.36 in outside
+  the content bounding box on all four sides. A smaller design pulls the marks
+  inward with it.
 - **Slot detection is geometry-driven.** Nothing is hardcoded. Any grid of
   magenta rectangles works, returned in reading order. A 2x3 legal or 4x4
   tabloid template needs no code change.
@@ -59,7 +69,8 @@ server/        FastAPI. sheet.py = detection/geometry, stamp.py = PDF overlay
 web/           Svelte 5 + Vite 6, built to static, served by FastAPI.
 cli/           Standalone scripts. cardsheet.py does the same job headless;
                make_template.py generates placeholder SVGs; make_fixture.py
-               builds a synthetic template so you can test without Tyler's PDF.
+               builds a synthetic template so you can test without Tyler's PDF;
+               pack.py + make_sticker_template.py lay out N stickers.
 templates/     Ready-made placeholder SVGs to upload to Design Space.
 ```
 
