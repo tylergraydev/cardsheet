@@ -37,8 +37,16 @@ There is a legacy raster path (`sheet.compose`) that rebuilds the page as a
   line, and it eats the gaps between cards. Tyler's first template had this
   bug: 63 x 88 mm cards measured 64.52 x 89.49, and a 1.77 mm gap collapsed to
   0.25 mm. `min_gap_px()` / `max_bleed_mm` exist to catch it in the UI.
-- **Bleed can only use half the gap per side.** Print Then Cut drifts about
-  ±1 mm, so aim for 8 mm gaps (4 mm of headroom).
+- **Bleed can only use half the gap per side.** Cricut's own Print Then Cut
+  bleed is 0.03 in, which is 0.762 mm per side, measured off a Design Space
+  export with bleed left on. That is the number to match. The real template
+  caps at 0.84 mm, which clears it, which is why printing has never been a
+  problem in practice. The 8 mm gap advice is print-shop conservatism, not a
+  Cricut requirement.
+- **Bleed replicates edge pixels, it does not scale the art.**
+  `cover_with_bleed()` fits art to the cut line and pads outward with
+  `np.pad(mode="edge")`. Scaling to fill the bleed box instead would zoom in
+  and crop the outer millimetre, thinning any drawn border.
 - **Slot detection is geometry-driven.** Nothing is hardcoded. Any grid of
   magenta rectangles works, returned in reading order. A 2x3 legal or 4x4
   tabloid template needs no code change.
@@ -102,9 +110,9 @@ but `compose()` converts mm back with `round()`, giving 11 px. So the UI
 advertised a maximum that immediately tripped the overlap warning. Now floored
 to whole pixels, 0.84 mm, which composes clean.
 
-The real template also has tight gaps: 1.78 mm, capping bleed at 0.84 mm per
-side, under the +/-1 mm Print Then Cut drift. `templates/` has gap8 and gap10
-SVGs that fix this properly.
+The real template's gaps are 1.78 mm, capping bleed at 0.84 mm per side. That
+clears Cricut's own 0.762 mm, so it is fine as is. `templates/` has gap8 and
+gap10 SVGs if more headroom is ever wanted.
 
 ## Deploying it
 
