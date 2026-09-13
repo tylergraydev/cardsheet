@@ -185,7 +185,7 @@ def sheet_image(ordered, arts, dpi=300):
 
 def layout(arts, *, gap_mm=2.0, border_mm=0.9, add_border=True, die_cut=None,
            paper="letter", corner_cut_mm=CORNER_CUT_MM, radius_mm=0.0,
-           split=None):
+           split=None, smooth=0.6):
     """Pack RGBA images. Returns a dict of everything the callers need.
 
     split=None splits a lone image into its separate stickers when it clearly
@@ -243,8 +243,8 @@ def layout(arts, *, gap_mm=2.0, border_mm=0.9, add_border=True, die_cut=None,
                     denom = printed_w - 2 * border_mm
                     if denom <= 0:
                         continue
-                    arts[i] = pack.add_border(
-                        orig[n], border_mm * orig[n].width / denom)
+                    px = border_mm * orig[n].width / denom
+                    arts[i] = pack.add_border(orig[n], px, smooth=px * smooth)
                     alphas[i] = np.asarray(arts[i])[:, :, 3]
                     aspects[i] = arts[i].width / arts[i].height
                 area, placed = pack.solve_shapes(alphas, region, gap_mm=gap_mm)

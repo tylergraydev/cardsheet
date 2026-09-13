@@ -53,6 +53,9 @@ def main():
                     help="rim to add to art that has none (default 0.9mm)")
     ap.add_argument("--no-border", action="store_true",
                     help="never add a rim, even to art without one")
+    ap.add_argument("--smooth", type=float, default=0.6,
+                    help="how much to round off the rim it adds, as a multiple "
+                         "of the rim width (0 = follow the art exactly)")
     ap.add_argument("--split", dest="split", action="store_true", default=None,
                     help="split a single sheet into its stickers "
                          "(default when you pass exactly one image)")
@@ -73,7 +76,8 @@ def main():
                        paper=a.paper,
                        corner_cut_mm=STK.to_mm(a.corner_cut),
                        radius_mm=STK.to_mm(a.radius),
-                       split=a.split)
+                       split=a.split,
+                       smooth=a.smooth)
     except ValueError as e:
         sys.exit(str(e))
 

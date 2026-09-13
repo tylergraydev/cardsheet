@@ -354,16 +354,57 @@ def detect_border(rgba, max_depth=14, white=235, frac=0.70):
     return depth
 
 
-def add_border(rgba, px, colour=(255, 255, 255)):
-    """Grow a solid rim around the silhouette, expanding the canvas to suit."""
+def _disk_offset(mask, r):
+    """Grow a mask by r pixels in every direction, as a true circle.
+
+    ndimage.binary_dilation(iterations=r) grows an L1 ball, so a rim built that
+    way comes out diamond shaped. A Euclidean distance transform gives the
+    round offset a sticker rim is supposed to have.
+    """
+    from scipy import ndimage as _nd
+    if r <= 0:
+        return mask
+    return _nd.distance_transform_edt(~mask) <= r
+
+
+def _smooth(mask, r):
+    """Morphological closing with a circular element: fills notches narrower
+    than about 2r without moving the rest of the outline."""
+    if r <= 0:
+        return mask
+    from scipy import ndimage as _nd
+    grown = _disk_offset(mask, r)
+    return _nd.distance_transform_edt(grown) > r
+
+
+def add_border(rgba, px, colour=(255, 255, 255), smooth=None):
+    """Add a rim around the silhouette, expanding the canvas to suit.
+
+    The rim is a rounded offset of the artwork, closed to round off notches
+    narrower than the rim itself, and antialiased off its own distance field so
+    the printed edge is not stair-stepped. It is built as a layer underneath,
+    so the art keeps its own edge quality instead of being painted over.
+    """
     from scipy import ndimage as _nd
     from PIL import Image as _I
-    p = int(round(px))
+
+    p = float(px)
     if p <= 0:
         return rgba
-    a = np.pad(np.asarray(rgba.convert("RGBA")), ((p, p), (p, p), (0, 0)))
-    alpha = a[:, :, 3] >= 128
-    ring = _nd.binary_dilation(alpha, iterations=p) & ~alpha
-    out = a.copy()
-    out[ring] = (*colour, 255)
-    return _I.fromarray(out)
+    s = p * 0.6 if smooth is None else float(smooth)
+    pad = int(np.ceil(p + s)) + 2
+
+    a = np.pad(np.asarray(rgba.convert("RGBA")), ((pad, pad), (pad, pad), (0, 0)))
+    solid = a[:, :, 3] >= 128
+    grown = _smooth(_disk_offset(solid, p), s)
+
+    # signed distance, negative inside, for a one pixel antialiased edge
+    sd = (_nd.distance_transform_edt(~grown).astype(np.float32)
+          - _nd.distance_transform_edt(grown).astype(np.float32))
+    rim = np.zeros_like(a)
+    rim[:, :, 0], rim[:, :, 1], rim[:, :, 2] = colour
+    rim[:, :, 3] = (np.clip(0.5 - sd, 0.0, 1.0) * 255).astype(np.uint8)
+
+    out = _I.fromarray(rim)
+    out.alpha_composite(_I.fromarray(a))
+    return out
