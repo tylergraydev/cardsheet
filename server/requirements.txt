@@ -1,0 +1,10 @@
+# pinned to the versions this app was actually run and verified against
+fastapi==0.141.1
+uvicorn[standard]==0.46.0
+python-multipart==0.0.26
+pypdfium2==5.7.1
+Pillow==12.2.0
+numpy==2.4.4
+scipy==1.17.1
+pypdf==3.17.4
+reportlab==4.4.10

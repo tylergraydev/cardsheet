@@ -1,0 +1,74 @@
+<?xml version="1.0"?>
+<!--
+  Unraid container template for cardsheet.
+  Docker tab -> Add Container -> paste this file's raw URL in Template,
+  or drop it in /boot/config/plugins/dockerMan/templates-user/ and pick
+  "cardsheet" from the template dropdown.
+-->
+<Container version="2">
+  <Name>cardsheet</Name>
+  <Repository>ghcr.io/tylergraydev/cardsheet:latest</Repository>
+  <Registry>https://github.com/tylergraydev/cardsheet/pkgs/container/cardsheet</Registry>
+  <Branch/>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/tylergraydev/cardsheet/issues</Support>
+  <Project>https://github.com/tylergraydev/cardsheet</Project>
+  <Overview>
+    Drop four card images onto a Cricut Print-Then-Cut sheet and print it
+    yourself, as many copies as you like. Cricut only does the cutting.
+
+    Reuses the registration marks from your own Design Space print-to-PDF
+    export by stamping art over the untouched original page, and verifies
+    after every build that not one mark pixel changed.
+
+    Upload your Design Space template PDF once on first run. It is stored in
+    the data volume.
+  </Overview>
+  <Category>Productivity: HomeAutomation: Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8000]/</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/tylergraydev/cardsheet/main/docs/icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+
+  <Config
+    Name="WebUI Port"
+    Target="8000"
+    Default="8080"
+    Mode="tcp"
+    Description="Host port for the web interface."
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">8080</Config>
+
+  <Config
+    Name="Data"
+    Target="/data"
+    Default="/mnt/user/appdata/cardsheet"
+    Mode="rw"
+    Description="Stores your Design Space template PDF and every generated sheet. Back this up and you never redo the Design Space setup."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/appdata/cardsheet</Config>
+
+  <Config
+    Name="Card Art (optional)"
+    Target="/art"
+    Default="/mnt/user/Documents/cards"
+    Mode="rw"
+    Description="Optional. Mount a share holding your card art so the browser file picker can reach it from the server side. Not required, drag and drop from your desktop works without it."
+    Type="Path"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+</Container>

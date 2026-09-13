@@ -1,0 +1,10 @@
+services:
+  cardsheet:
+    build: .
+    image: cardsheet:latest
+    container_name: cardsheet
+    ports:
+      - "8080:8000"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
