@@ -10,46 +10,41 @@ worth doing.
 Push the source to GitHub, let Actions build the image, let Unraid pull it.
 Updates become "click Update" in the Docker tab forever after.
 
-### 1. Push it
+### 1. Push it (done 2026-09-12)
 
-The repo is already committed locally, with `origin` pointed at
-`https://github.com/tylergraydev/cardsheet.git`. Create the empty repo and
-push:
+The repo is live at <https://github.com/tylergraydev/cardsheet>, public, on
+branch `main`. Note the local branch started as `master` and was renamed, since
+`.github/workflows/docker.yml` only triggers on `main`.
+
+The first Actions run passed in 1m19s and published:
+
+| tag | |
+|---|---|
+| `ghcr.io/tylergraydev/cardsheet:latest` | linux/amd64, 146 MB, 9 layers |
+| `ghcr.io/tylergraydev/cardsheet:sha-b8d7edc` | same image, pinned |
+
+### 2. Package visibility (nothing to do)
+
+**Already public.** This step used to say the flip was mandatory because GHCR
+defaulted packages to private even in a public repo. That is no longer how
+GitHub behaves: a package published by Actions from a public repo inherits
+public visibility.
+
+Confirmed by running the exact sequence `docker pull` runs, with no
+credentials: fetch an anonymous token from `ghcr.io/token`, then GET the
+manifest, the tag list, and the config blob. All three return 200. So Unraid
+pulls it without any `ghcr.io` login.
+
+If you ever make the repo private, this stops being true. Then either set the
+package public by hand under Package settings, or add a `ghcr.io` credential in
+the Unraid Docker tab with a PAT scoped `read:packages`.
+
+To check it yourself at any time:
 
 ```bash
-cd cardsheet-app
-gh repo create tylergraydev/cardsheet --public \
-  -d "Build Cricut Print-Then-Cut card sheets: drop four images, print them yourself, let Cricut only cut."
-git push -u origin main
+TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:tylergraydev/cardsheet:pull&service=ghcr.io" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+curl -s -H "Authorization: Bearer $TOKEN" https://ghcr.io/v2/tylergraydev/cardsheet/tags/list
 ```
-
-If `gh` is not installed, make the repo at
-<https://github.com/new> (name `cardsheet`, public, no README or .gitignore)
-and then just `git push -u origin main`.
-
-`.github/workflows/docker.yml` is already in the tree. It builds on every push
-to `main` and publishes `ghcr.io/tylergraydev/cardsheet:latest` plus a
-short-SHA tag. No secrets to configure, `GITHUB_TOKEN` covers GHCR.
-
-Watch the first run:
-
-```bash
-gh run watch
-```
-
-### 2. Make the package public
-
-The Action publishes `ghcr.io/tylergraydev/cardsheet`. GHCR packages default to
-**private even when the repo is public**, so this step is not optional:
-
-repo → Packages (right sidebar) → cardsheet → Package settings →
-Danger Zone → Change visibility → **Public**
-
-Also under Package settings, confirm the package is linked to the repo so the
-Unraid template's Registry link resolves.
-
-Without this, Unraid's pull fails with `denied` and you would have to add a
-`ghcr.io` credential in the Docker tab with a PAT scoped `read:packages`.
 
 ### 3. Add the container
 

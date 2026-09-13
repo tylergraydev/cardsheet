@@ -65,32 +65,32 @@ template upload, slot detection, all four drop targets, build, mark
 verification, gap warning. CLI and API outputs were pixel-identical when both
 used the raster path.
 
-## NOT verified — this is the remaining work
+## Shipped and verified on 2026-09-12
 
-1. **The Docker build has never run.** It was written in a sandbox with no
-   Docker daemon. Both stages were exercised natively (the `npm ci` tree builds,
-   the pinned pip set resolves on Python 3.11) but `docker build` is unproven.
-   This is the first thing to check.
-2. **Nothing has been pushed.** `origin` is set to
-   `github.com/tylergraydev/cardsheet` and there is one commit. The repo does
-   not exist on GitHub yet.
-3. **GHCR publish is untested.** `.github/workflows/docker.yml` should work but
-   has never run.
+All three items that used to be unverified now are.
 
-## Finishing it
+1. **The Docker build works.** First run of `.github/workflows/docker.yml`
+   passed in 1m19s. Both stages build clean.
+2. **Pushed.** `github.com/tylergraydev/cardsheet` is public, branch `main`.
+   The local branch was `master` and had to be renamed, since the workflow
+   only triggers on `main`.
+3. **GHCR publish works.** `ghcr.io/tylergraydev/cardsheet:latest` plus a
+   `sha-` tag. linux/amd64, 146 MB, 9 layers. Verified by doing the same
+   token-then-manifest sequence `docker pull` does: anonymous fetch of the
+   manifest, tag list, and config blob all succeed, so the package is
+   **already public** with no visibility change needed. GitHub no longer
+   defaults Actions-published packages to private in a public repo. The old
+   note here said that flip was mandatory. It is not.
 
-```bash
-gh repo create tylergraydev/cardsheet --public \
-  -d "Build Cricut Print-Then-Cut card sheets"
-git push -u origin main
-gh run watch
-```
+Still not done: **the container has never been run.** The image builds and
+pulls, but nothing has started it and no sheet has been built from inside it.
+That is the next thing to prove, on Unraid.
 
-Then **make the package public**: repo → Packages → cardsheet → Package
-settings → Change visibility → Public. GHCR packages default to private even
-when the repo is public, and Unraid's pull fails with `denied` otherwise.
+## Deploying it
 
-Then on Unraid: drop `unraid-template.xml` into
+GitHub and GHCR are done. What remains is Unraid:
+
+Drop `unraid-template.xml` into
 `/boot/config/plugins/dockerMan/templates-user/` and pick **cardsheet** from
 the template dropdown. Port 8080, appdata at `/mnt/user/appdata/cardsheet`.
 
